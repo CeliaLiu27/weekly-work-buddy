@@ -790,13 +790,13 @@ textarea.finput{resize:vertical;min-height:64px}
         <div class="bi-d" id="ghStatus" style="margin-bottom:8px">填一次仓库和 Token，之后改动会自动推送；换浏览器 / 换设备点「拉取」即可原样恢复。</div>
         <input class="finput" id="ghRepo" placeholder="仓库：CeliaLiu27/weekly-work-buddy-data" data-act="ghInput">
         <input class="finput" id="ghToken" type="password" placeholder="GitHub Token（Contents 读写权限）" data-act="ghInput">
-        <label class="gh-auto"><input type="checkbox" id="ghAuto"> 每次改动后自动推送（最多 1 分钟一次）</label>
+        <label class="gh-auto"><input type="checkbox" id="ghAuto" checked> 每次改动后自动推送（最多 1 分钟一次）</label>
         <div class="gh-acts">
           <button class="btn btn-sm btn-primary" data-act="ghPush">推送到 GitHub</button>
           <button class="btn btn-sm" data-act="ghPull">从 GitHub 拉取</button>
           <button class="btn btn-sm" data-act="ghSave">保存设置</button>
         </div>
-        <div class="gh-tip">Token 申请：github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens，只对这一个私有仓库给 Contents 读写。Token 只存在你自己的浏览器里。</div>
+        <div class="gh-tip"><b>Token 申请（30 秒）</b>：打开 <a href="https://github.com/settings/tokens/new?description=Weekly%20Work%20Buddy&scopes=repo" target="_blank" rel="noopener">github.com/settings/tokens/new</a>，描述随意，勾选 <b>repo</b>，拉到最底 Generate token，复制那串 ghp_ 开头的内容粘到上面。Token 只存在你自己的浏览器里，不会发给任何人。</div>
       </div>
     </div>
     <div class="snap-title">自动快照 · 最近 6 次改动，误删可回滚</div>
@@ -1903,6 +1903,8 @@ function saveGithubCfg(){
   S.github.token=(t&&t.value||'').trim();
   S.github.auto=!!(a&&a.checked);
   save(); renderBackupPanel(); toast('已保存 GitHub 设置');
+  /* 配好就立刻推一份，确保云端有底 */
+  if(ghOK()) ghPush(false);
 }
 function ghStatusText(){
   var el=$('ghStatus'); if(!el) return;

@@ -557,8 +557,15 @@ textarea.finput{resize:vertical;min-height:64px}
       <div class="tasklist" id="taskList"></div>
       <div id="doneArea"></div>
       <div class="seednote" id="seedNote" style="display:none">
-        <span>当前为示例数据</span>
-        <button class="btn btn-sm btn-ghost" data-act="clearSeed">清空示例</button>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;color:var(--ink-2)">这是示例数据，不是你记录的内容</div>
+          <div id="seedWhere" style="font-size:11px;margin-top:3px;line-height:1.6"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-sm" data-act="ghPull">从 GitHub 拉回</button>
+          <button class="btn btn-sm" data-act="importJSON">导入 JSON</button>
+          <button class="btn btn-sm btn-ghost" data-act="clearSeed">清空示例</button>
+        </div>
       </div>
     </section>
 
@@ -795,8 +802,8 @@ textarea.finput{resize:vertical;min-height:64px}
     <div class="snap-title">自动快照 · 最近 6 次改动，误删可回滚</div>
     <div class="snap-list" id="snapList"></div>
     <div style="margin-top:14px;font-size:11.5px;color:var(--ink-3);line-height:1.7">
-      数据保存在<b>当前浏览器</b>的本地存储里，换浏览器、换设备、清理缓存都会丢失。<br>
-      开了 GitHub 云备份后就不用管了：本地每次改动会推一份到你的私有仓库，链接重发导致本地缓存丢失时，<b>重新打开会自动从 GitHub 拉回</b>。
+      当前存储位置：<b id="bkHost"></b>（数据保存在<b>这个网址对应的浏览器存储</b>里，换网址、换浏览器、清理缓存都会读不到）。<br>
+      开了 GitHub 云备份后就不用管了：本地每次改动会推一份到你的私有仓库，网址换了导致读不到时，<b>重新打开会自动从 GitHub 拉回</b>。
     </div>
   </div>
 </div>
@@ -1385,6 +1392,14 @@ function renderBoard(){
       (V.showDone?'<div class="tasklist" style="margin-top:10px">'+done.map(taskCardHTML).join('')+'</div>':'')
     : '';
   $('seedNote').style.display = S.seeded ? 'flex':'none';
+  if(S.seeded){
+    var sw=$('seedWhere');
+    if(sw){
+      sw.innerHTML='你的数据存在「浏览器 + 网址」对应的盒子里，换网址就换盒子。'+
+        '当前网址：<b>'+esc(location.host)+'</b>。'+
+        '如果之前是在别的网址上记的，打开那个旧网址 → 数据与备份 → 导出 JSON，再回到这里导入即可。';
+    }
+  }
 }
 
 function renderZones(){
@@ -1944,7 +1959,8 @@ function maybeAutoPush(){
 function autoRestoreIfEmpty(){
   if(!ghOK()) return;
   var empty = !S.tasks.length && !S.tracks.length && !Object.keys(S.moods||{}).length;
-  if(!empty) return;
+  /* 本地为空，或只剩示例数据 → 自动从 GitHub 拉回真实数据 */
+  if(!empty && !S.seeded) return;
   ghPull(true).then(function(ok){ if(ok) toast('已从 GitHub 自动恢复你的数据'); });
 }
 
@@ -1968,6 +1984,7 @@ function renderBackupPanel(){
   if(gt && document.activeElement!==gt) gt.value=(S.github&&S.github.token)||'';
   if(ga) ga.checked=!!(S.github&&S.github.auto);
   ghStatusText();
+  var bh=$('bkHost'); if(bh) bh.textContent=location.host;
   var el=$('bkLastExport');
   if(el){
     el.innerHTML = last

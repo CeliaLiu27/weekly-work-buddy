@@ -950,10 +950,10 @@ var V = {              /* 视图状态（不持久化） */
 
 /* ---------- 数据层 ---------- */
 function defaultState(){
-  return { tasks:[], goals:[], budgets:{work:4,campus:2,personal:4}, energy:{},
+  return { tasks:[], goals:[], budgets:{work:4,campus:2,personal:2}, energy:{},
            blocks:{morning:[],afternoon:[],evening:[]}, seeded:false,
            tracks:[], reviewNotes:{gain:'',improve:'',next:''},
-           manualUsage:{}, dataVersion:2,
+           manualUsage:{}, dataVersion:3,
            habits:[{id:'h_sleep',emoji:'😴',name:'睡觉'},{id:'h_fit',emoji:'💪',name:'健身'}],
            habitChecks:{}, moods:{} };
 }
@@ -1009,6 +1009,12 @@ function load(){
           S.budgets.personal = typeof d.budgets.personal==='number'? d.budgets.personal : S.budgets.personal;
         }
         S.dataVersion = version || 1;
+      }
+      /* v3：预算改为 工作4 / 校招2 / 个人2（一次性，只执行一遍） */
+      if(S.dataVersion < 3){
+        S.budgets = {work:4, campus:2, personal:2};
+        S.dataVersion = 3;
+        save();
       }
       if(d.energy && typeof d.energy==='object') S.energy=d.energy;
       if(d.blocks) S.blocks = {morning:d.blocks.morning||[],afternoon:d.blocks.afternoon||[],evening:d.blocks.evening||[]};
@@ -1975,7 +1981,7 @@ function normaliseState(){
   if(!S.manualUsage) S.manualUsage={};
   if(!S.energy) S.energy={};
   if(!S.reviewNotes) S.reviewNotes={gain:'',improve:'',next:''};
-  if(!S.dataVersion) S.dataVersion=2;
+  if(!S.dataVersion || S.dataVersion < 3){ S.budgets={work:4,campus:2,personal:2}; S.dataVersion=3; }
 }
 function renderBackupPanel(){
   var last=null;

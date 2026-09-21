@@ -727,6 +727,13 @@ textarea.finput{resize:vertical;min-height:64px}
           <option value="evening">Evening</option>
         </select>
       </div>
+      <div class="fitem">
+        <label class="flabel">重复</label>
+        <select class="finput" id="fRepeat">
+          <option value="">不重复</option>
+          <option value="daily">每天</option>
+        </select>
+      </div>
       <div class="fitem full">
         <label class="flabel">备注</label>
         <textarea class="finput" id="fNote" placeholder="补充信息（可选）"></textarea>
@@ -1366,6 +1373,7 @@ function taskCardHTML(t){
         '<span class="chip chip-'+String(t.priority).toLowerCase()+'">'+PRIO[t.priority].label+'</span>'+
         '<span class="chip chip-zone"><span class="zdot" style="background:'+z.color+'"></span>'+esc(z.label)+'</span>'+
         (t.type?'<span class="chip chip-type">'+esc(t.type)+'</span>':'')+
+        (t.repeat==='daily'?'<span class="chip chip-type" title="每天循环，完成自动生成明天的一份">🔁 每天</span>':'')+
         '<span class="'+dl.cls+'">'+dl.txt+'</span>'+
         '<span class="chip-est">'+fmtHM(t.est)+'</span>'+
       '</div>'+
@@ -1768,6 +1776,7 @@ function openTaskModal(id){
   $('fEst').value = t?t.est:1;
   $('fTT').value = t?(t.timeType||ttFromZone(t.zone)):'work';
   $('fBlock').value = t?(t.block||''):'';
+  $('fRepeat').value = t?(t.repeat||''):'';
   $('fNote').value = t?(t.note||''):'';
   var pbtns=$('fPrio').querySelectorAll('button');
   for(var i=0;i<pbtns.length;i++) pbtns[i].classList.toggle('on', (t?t.priority:'P2')===pbtns[i].getAttribute('data-p'));
@@ -1790,6 +1799,7 @@ function saveTaskFromModal(){
     deadline:$('fDeadline').value||null, priority:prio,
     est:Math.max(0.25, parseFloat($('fEst').value)||1),
     timeType:$('fTT').value, block:$('fBlock').value||null,
+    repeat:$('fRepeat') ? $('fRepeat').value : '',
     note:$('fNote').value.trim()
   };
   if(V.editingId){
@@ -1806,6 +1816,23 @@ function saveTaskFromModal(){
   save(); closeTaskModal(); refreshAll();
 }
 function closeTaskModal(){ $('taskMask').classList.remove('open'); V.editingId=null; }
+
+/* 每日循环任务：完成时自动生成明天的一份（同源防重） */
+function spawnRecurring(t){
+  if(!t || t.repeat!=='daily') return;
+  var src = t.repeatSrc || t.id;
+  var base = t.deadline || today();
+  var next = addDays(base, 1);
+  var exists = S.tasks.some(function(x){
+    return x.id!==t.id && (x.repeatSrc||x.id)===src && x.status!=='done' && x.deadline===next;
+  });
+  if(exists) return;
+  var nt={};
+  for(var k in t) nt[k]=t[k];
+  nt.id=uid(); nt.status='todo'; nt.doneAt=null; nt.deadline=next;
+  nt.repeat='daily'; nt.repeatSrc=src; nt.createdAt=today(); nt.order=(Date.now()%10000000)+1;
+  S.tasks.push(nt);
+}
 
 /* ---------- 时段安排选择器 ---------- */
 function openBlockPicker(k){
@@ -2163,13 +2190,14 @@ document.addEventListener('click', function(e){
       e.stopPropagation();
       t=findT(id); if(!t) break;
       if(t.status==='done'){ t.status='todo'; t.doneAt=null; }
-      else{ t.status='done'; t.doneAt=today(); }
+      else{ t.status='done'; t.doneAt=today(); spawnRecurring(t); }
       if(S.seeded) S.seeded=false;
       save(); refreshAll(); break;
     }
     case 'doneTask': {
       t=findT(id); if(!t) break;
       t.status='done'; t.doneAt=today();
+      spawnRecurring(t);
       if(S.seeded) S.seeded=false;
       save(); refreshAll(); toast('完成 ✓'); break;
     }

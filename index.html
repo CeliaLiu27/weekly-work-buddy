@@ -162,6 +162,23 @@ svg{display:block;flex:none}
 .t-main{flex:1;min-width:0}
 .t-title{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .t-meta{display:flex;gap:7px;margin-top:4px;flex-wrap:wrap;align-items:center}
+/* 子任务 */
+.t-subs{display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer}
+.ts-bar{flex:1;height:5px;border-radius:4px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.ts-fill{height:100%;border-radius:4px;background:var(--green);transition:width .25s}
+.ts-num{font-size:10.5px;font-weight:700;color:var(--ink-3);min-width:30px;text-align:right}
+.ts-num.all{color:var(--green)}
+.sub-list{margin-top:7px;display:flex;flex-direction:column;gap:4px}
+.sl-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);cursor:pointer;padding:2px 4px;border-radius:6px}
+.sl-row:hover{background:var(--bg)}
+.sl-row.done span{text-decoration:line-through;color:var(--ink-3)}
+.sl-row input{accent-color:var(--green)}
+.sub-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sub-row .sub-ck{width:15px;height:15px;accent-color:var(--green);flex:none}
+.sub-txt{flex:1;padding:7px 10px;border:1px solid var(--line-2);border-radius:9px;background:var(--card);font-size:12.5px;color:var(--ink);font-family:inherit}
+.sub-txt:focus{outline:none;border-color:var(--ink-3)}
+.sub-del{width:24px;height:24px;border-radius:7px;border:none;background:transparent;color:var(--ink-3);cursor:pointer;font-size:11px;flex:none}
+.sub-del:hover{background:var(--bg-2);color:var(--p0)}
 .t-acts{display:flex;gap:4px;opacity:0;transition:opacity .15s;flex:none}
 .tcard:hover .t-acts{opacity:1}
 .tact{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-3)}
@@ -735,8 +752,9 @@ textarea.finput{resize:vertical;min-height:64px}
         </select>
       </div>
       <div class="fitem full">
-        <label class="flabel">备注</label>
-        <textarea class="finput" id="fNote" placeholder="补充信息（可选）"></textarea>
+        <label class="flabel">子任务 <span id="subCount" style="font-weight:500;color:var(--ink-3)"></span></label>
+        <div id="subEditor"></div>
+        <button class="btn btn-sm btn-ghost" type="button" data-act="subAdd" style="margin-top:6px">＋ 添加子任务</button>
       </div>
     </div>
     <div class="modal-foot">
@@ -952,7 +970,8 @@ var V = {              /* 视图状态（不持久化） */
   zoneFilter:'all', sortMode:'priority', showDone:false,
   editingId:null, dragId:null, blockPickK:null,
   focusCat:null, focusStart:null, focusTimer:null,
-  adjustCat:null, moodDate:null, editHabit:null
+  adjustCat:null, moodDate:null, editHabit:null,
+  subDraft:[], subOpen:null
 };
 
 /* ---------- 数据层 ---------- */
@@ -1364,6 +1383,23 @@ function renderToday(){
 
 function taskCardHTML(t){
   var z=ZONES[t.zone]||ZONES.career, dl=deadlineLabel(t);
+  var subs=Array.isArray(t.subs)?t.subs:[];
+  var sd=subs.filter(function(s){return s.done;}).length;
+  var pct=subs.length?Math.round(sd/subs.length*100):0;
+  var open=V.subOpen===t.id;
+  var subHtml='';
+  if(subs.length){
+    subHtml='<div class="t-subs" data-act="subExpand" data-id="'+t.id+'" title="点击展开/收起子任务">'+
+      '<div class="ts-bar"><div class="ts-fill" style="width:'+pct+'%"></div></div>'+
+      '<span class="ts-num'+(sd===subs.length?' all':'')+'">'+sd+'/'+subs.length+'</span></div>';
+    if(open){
+      subHtml+='<div class="sub-list">'+subs.map(function(s){
+        return '<label class="sl-row'+(s.done?' done':'')+'">'+
+          '<input type="checkbox" data-act="subCheck" data-id="'+t.id+'" data-s="'+s.id+'"'+(s.done?' checked':'')+'>'+
+          '<span>'+esc(s.text)+'</span></label>';
+      }).join('')+'</div>';
+    }
+  }
   return '<div class="tcard'+(t.status==='done'?' done':'')+'" draggable="true" data-id="'+t.id+'">'+
     '<button class="tcheck" data-act="toggleTask" data-id="'+t.id+'" title="完成 / 取消完成">'+
       '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>'+
@@ -1376,7 +1412,7 @@ function taskCardHTML(t){
         (t.repeat==='daily'?'<span class="chip chip-type" title="每天循环，完成自动生成明天的一份">🔁 每天</span>':'')+
         '<span class="'+dl.cls+'">'+dl.txt+'</span>'+
         '<span class="chip-est">'+fmtHM(t.est)+'</span>'+
-      '</div>'+
+      '</div>'+ subHtml +
     '</div>'+
     '<div class="t-acts">'+
       '<button class="tact" data-act="editTask" data-id="'+t.id+'" title="编辑"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>'+
@@ -1777,7 +1813,8 @@ function openTaskModal(id){
   $('fTT').value = t?(t.timeType||ttFromZone(t.zone)):'work';
   $('fBlock').value = t?(t.block||''):'';
   $('fRepeat').value = t?(t.repeat||''):'';
-  $('fNote').value = t?(t.note||''):'';
+  V.subDraft = (t && Array.isArray(t.subs)) ? t.subs.map(function(s){ return {id:s.id, text:s.text, done:!!s.done}; }) : [];
+  renderSubEditor();
   var pbtns=$('fPrio').querySelectorAll('button');
   for(var i=0;i<pbtns.length;i++) pbtns[i].classList.toggle('on', (t?t.priority:'P2')===pbtns[i].getAttribute('data-p'));
   $('fPrio')._val = t?t.priority:'P2';
@@ -1790,6 +1827,43 @@ function fillTypeList(zone){
   ZONES[zone].types.forEach(function(x){ h+='<option value="'+esc(x)+'">'; });
   $('typeList').innerHTML=h;
 }
+function renderSubEditor(){
+  var box=$('subEditor'); if(!box) return;
+  var d=V.subDraft||[];
+  $('subCount').textContent = d.length ? '· '+d.filter(function(s){return s.done;}).length+'/'+d.length+' 已完成' : '';
+  box.innerHTML = d.length ? d.map(function(s,i){
+    return '<div class="sub-row">'+
+      '<input type="checkbox" class="sub-ck" data-i="'+i+'"'+(s.done?' checked':'')+' title="标记完成">'+
+      '<input type="text" class="sub-txt" data-i="'+i+'" value="'+esc(s.text)+'" placeholder="子任务 '+(i+1)+'">'+
+      '<button class="sub-del" type="button" data-act="subDel" data-i="'+i+'" title="删除">✕</button>'+
+    '</div>';
+  }).join('') : '<div style="font-size:11.5px;color:var(--ink-3);padding:2px 0">还没有子任务，把大任务拆成几小步，逐项打勾</div>';
+  var inputs=box.querySelectorAll('.sub-txt');
+  for(var i=0;i<inputs.length;i++){
+    (function(inp){
+      var idx=parseInt(inp.getAttribute('data-i'),10);
+      inp.addEventListener('input', function(){ if(V.subDraft[idx]) V.subDraft[idx].text=inp.value; });
+      inp.addEventListener('keydown', function(ev){
+        if(ev.key==='Enter'){ ev.preventDefault();
+          if(!inp.value.trim() && idx===V.subDraft.length-1) return;
+          V.subDraft.splice(idx+1,0,{id:uid(),text:'',done:false}); renderSubEditor();
+          var ni=$('subEditor').querySelectorAll('.sub-txt')[idx+1]; if(ni) ni.focus();
+        }
+        if(ev.key==='Backspace' && !inp.value && V.subDraft.length>1){
+          ev.preventDefault(); V.subDraft.splice(idx,1); renderSubEditor();
+          var pi=$('subEditor').querySelectorAll('.sub-txt')[Math.max(0,idx-1)]; if(pi) pi.focus();
+        }
+      });
+      var ck=inp.parentNode.querySelector('.sub-ck');
+      ck.addEventListener('change', function(){ if(V.subDraft[idx]) V.subDraft[idx].done=ck.checked; renderSubEditor(); });
+    })(inputs[i]);
+  }
+}
+function collectSubs(){
+  return (V.subDraft||[]).filter(function(s){ return s.text.trim(); }).map(function(s){
+    return {id:s.id, text:s.text.trim(), done:!!s.done};
+  });
+}
 function saveTaskFromModal(){
   var title=$('fTitle').value.trim();
   if(!title){ toast('先写一下任务名称'); $('fTitle').focus(); return; }
@@ -1800,7 +1874,7 @@ function saveTaskFromModal(){
     est:Math.max(0.25, parseFloat($('fEst').value)||1),
     timeType:$('fTT').value, block:$('fBlock').value||null,
     repeat:$('fRepeat') ? $('fRepeat').value : '',
-    note:$('fNote').value.trim()
+    subs:collectSubs()
   };
   if(V.editingId){
     var t=findT(V.editingId);
@@ -1815,7 +1889,7 @@ function saveTaskFromModal(){
   if(S.seeded) S.seeded=false;
   save(); closeTaskModal(); refreshAll();
 }
-function closeTaskModal(){ $('taskMask').classList.remove('open'); V.editingId=null; }
+function closeTaskModal(){ $('taskMask').classList.remove('open'); V.editingId=null; V.subDraft=[]; }
 
 /* 每日循环任务：完成时自动生成明天的一份（同源防重） */
 function spawnRecurring(t){
@@ -1831,6 +1905,7 @@ function spawnRecurring(t){
   for(var k in t) nt[k]=t[k];
   nt.id=uid(); nt.status='todo'; nt.doneAt=null; nt.deadline=next;
   nt.repeat='daily'; nt.repeatSrc=src; nt.createdAt=today(); nt.order=(Date.now()%10000000)+1;
+  nt.subs = Array.isArray(t.subs) ? t.subs.map(function(s){ return {id:uid(), text:s.text, done:false}; }) : [];
   S.tasks.push(nt);
 }
 
@@ -2175,6 +2250,30 @@ document.addEventListener('click', function(e){
     case 'closeBk': $('bkMask').classList.remove('open'); break;
     case 'newTask': openTaskModal(null); break;
     case 'closeTask': closeTaskModal(); break;
+    case 'subAdd': {
+      V.subDraft.push({id:uid(), text:'', done:false});
+      renderSubEditor();
+      var rows=$('subEditor').querySelectorAll('.sub-txt');
+      if(rows.length) rows[rows.length-1].focus();
+      break;
+    }
+    case 'subDel': {
+      V.subDraft.splice(parseInt(el.getAttribute('data-i'),10),1);
+      renderSubEditor(); break;
+    }
+    case 'subExpand': {
+      var sid=el.getAttribute('data-id');
+      V.subOpen = V.subOpen===sid ? null : sid;
+      renderBoard(); renderZones(); break;
+    }
+    case 'subCheck': {
+      var pt=findT(el.getAttribute('data-id'));
+      if(pt && Array.isArray(pt.subs)){
+        pt.subs.forEach(function(s){ if(s.id===el.getAttribute('data-s')) s.done=el.checked; });
+        save(); renderBoard(); renderZones();
+      }
+      break;
+    }
     case 'closeBlockPicker': closeBlockPicker(); break;
     case 'confirmBlockPick': confirmBlockPick(); break;
     case 'customBlockPick': customBlockPick(); break;

@@ -343,6 +343,9 @@ svg{display:block;flex:none}
 .bentry .bl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
 .bentry .bx{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-3);flex:none}
 .bentry .bx:hover{background:var(--p0-bg);color:var(--p0)}
+.bentry.did{opacity:.55}
+.bentry.did .bl{text-decoration:line-through;color:var(--ink-3)}
+.bentry.did .bt{text-decoration:line-through;color:var(--ink-3)}
 .bzone-empty{font-size:11.5px;color:var(--ink-3);padding:4px 2px}
 
 /* ---------- weekly review ---------- */
@@ -1609,11 +1612,12 @@ function renderBlocks(){
   var defs=[['morning','Morning'],['afternoon','Afternoon'],['evening','Evening']];
   $('blocks').innerHTML = defs.map(function(d){
     var k=d[0];
-    var fromTasks = S.tasks.filter(function(t){ return t.block===k && t.status!=='done' && t.deadline===today(); });
+    var fromTasks = S.tasks.filter(function(t){ return t.block===k && t.deadline===today(); })
+      .sort(function(a,b){ return (a.status==='done')-(b.status==='done'); });
     var customs = S.blocks[k]||[];
     var entriesHtml='';
     fromTasks.forEach(function(t){
-      entriesHtml+='<div class="bentry"><span class="bt">'+esc(t.blockTime||'--:--')+'</span><span class="bl">'+esc(t.title)+'</span>'+
+      entriesHtml+='<div class="bentry'+(t.status==='done'?' did':'')+'"><span class="bt">'+esc(t.blockTime||'--:--')+'</span><span class="bl">'+esc(t.title)+'</span>'+
         '<button class="bx" data-act="unblockTask" data-id="'+t.id+'" title="移出时段"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>';
     });
     customs.forEach(function(e){

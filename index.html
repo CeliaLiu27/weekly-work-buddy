@@ -587,50 +587,10 @@ textarea.finput{resize:vertical;min-height:64px}
       <div class="stat-row" id="weekStats"></div>
     </section>
 
-    <!-- goals -->
-    <section class="card sec">
-      <div class="sec-head">
-        <span class="sec-no">✦</span>
-        <div>
-          <div class="sec-en">Weekly Focus</div>
-          <div class="sec-title" id="goalTitle">本周 3 个核心目标</div>
-        </div>
-        <div class="spacer"></div>
-        <button class="btn btn-sm" data-act="goalHist" id="goalHistBtn" style="display:none" title="查看之前几周的目标存档">↺ 目标回溯</button>
-        <button class="btn btn-sm" data-act="goalAdd" id="goalAddBtn">＋ 添加目标</button>
-      </div>
-      <div class="goals" id="goals"></div>
-    </section>
-
-    <!-- 02 Quick Capture -->
+    <!-- 02 Task board · 周视图（含每日 上/中/晚） -->
     <section class="card sec">
       <div class="sec-head">
         <span class="sec-no">02</span>
-        <div>
-          <div class="sec-en">Quick Capture</div>
-          <div class="sec-title">有什么要做的？</div>
-        </div>
-      </div>
-      <form class="qc" id="qcForm">
-        <div class="qc-input">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#A79E90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          <input id="qcInput" type="text" placeholder="例如：周三之前整理圆通国际管培生面试案例，2小时" autocomplete="off">
-        </div>
-        <button class="btn btn-dark" type="submit" style="min-height:46px">记下来</button>
-      </form>
-      <div class="qc-parse" id="qcParse"></div>
-      <div class="qc-hint">
-        <span>自动识别：<b>截止日期</b>（周三之前 / 明天 / 9月20日）</span>
-        <span><b>优先级</b>（紧急=P0 / 重要=P1）</span>
-        <span><b>耗时</b>（2小时 / 30分钟）</span>
-        <span><b>所属项目</b>（面试→Career · AskSia · Paradigm · 韩语→学习）</span>
-      </div>
-    </section>
-
-    <!-- 03 Task board · 周视图（含每日 上/中/晚） -->
-    <section class="card sec">
-      <div class="sec-head">
-        <span class="sec-no">03</span>
         <div>
           <div class="sec-en">Week Board</div>
           <div class="sec-title">任务看板 · 本周 7 天（上午 / 下午 / 晚上）</div>
@@ -657,7 +617,7 @@ textarea.finput{resize:vertical;min-height:64px}
     <!-- 05 Memos 每周备忘录 -->
     <section class="card sec">
       <div class="sec-head">
-        <span class="sec-no">05</span>
+        <span class="sec-no">03</span>
         <div>
           <div class="sec-en">Weekly Memos</div>
           <div class="sec-title">每周备忘录</div>
@@ -696,7 +656,7 @@ textarea.finput{resize:vertical;min-height:64px}
     <!-- 06 Weekly Review -->
     <section class="card sec">
       <div class="sec-head">
-        <span class="sec-no">06</span>
+        <span class="sec-no">04</span>
         <div>
           <div class="sec-en">Weekly Review</div>
           <div class="sec-title">本周复盘</div>
@@ -844,7 +804,20 @@ textarea.finput{resize:vertical;min-height:64px}
         <select class="finput" id="fRepeat">
           <option value="">不重复</option>
           <option value="daily">每天</option>
+          <option value="weekly">每周</option>
         </select>
+      </div>
+      <div class="fitem full" id="fWeeklyWrap" style="display:none">
+        <label class="flabel">每周几重复</label>
+        <div class="seg" id="fWeekdays">
+          <button type="button" data-d="1">周一</button>
+          <button type="button" data-d="2">周二</button>
+          <button type="button" data-d="3">周三</button>
+          <button type="button" data-d="4">周四</button>
+          <button type="button" data-d="5">周五</button>
+          <button type="button" data-d="6">周六</button>
+          <button type="button" data-d="0">周日</button>
+        </div>
       </div>
       <div class="fitem full">
         <label class="flabel">子任务 <span id="subCount" style="font-weight:500;color:var(--ink-3)"></span></label>
@@ -1432,6 +1405,7 @@ function renderThisWeek(){
 
 function renderGoals(){
   var el=$('goals');
+  if(!el) return;   /* 核心目标卡片已移除 */
   var ws=weekStart(), we=weekEnd();
   var hbtn=$('goalHistBtn');
 
@@ -2091,10 +2065,8 @@ function memoInsertImages(files){
 }
 
 function refreshAll(){
-  rolloverGoals();
   renderGlance();
   renderThisWeek();
-  renderGoals();
   renderToday();
   renderBoard();
   renderEnergy();
@@ -2124,6 +2096,10 @@ function openTaskModal(id, presetDate){
   $('fTT').value = t?(t.timeType||ttFromZone(t.zone)):'work';
   $('fBlock').value = t?(t.block||''):'';
   $('fRepeat').value = t?(t.repeat||''):'';
+  var _wds=(t && Array.isArray(t.repeatDays))?t.repeatDays:[];
+  var _wb=$('fWeekdays').querySelectorAll('button');
+  for(var _wi=0;_wi<_wb.length;_wi++) _wb[_wi].classList.toggle('on', _wds.indexOf(+_wb[_wi].getAttribute('data-d'))>=0);
+  $('fWeeklyWrap').style.display = $('fRepeat').value==='weekly' ? '' : 'none';
   V.subDraft = (t && Array.isArray(t.subs)) ? t.subs.map(function(s){ return {id:s.id, text:s.text, done:!!s.done}; }) : [];
   renderSubEditor();
   var pbtns=$('fPrio').querySelectorAll('button');
@@ -2185,6 +2161,12 @@ function saveTaskFromModal(){
     est:Math.max(0.25, parseFloat($('fEst').value)||1),
     timeType:$('fTT').value, block:$('fBlock').value||null,
     repeat:$('fRepeat') ? $('fRepeat').value : '',
+    repeatDays:(function(){
+      if(!$('fRepeat') || $('fRepeat').value!=='weekly') return null;
+      var out=[], bs=$('fWeekdays').querySelectorAll('button.on');
+      for(var i=0;i<bs.length;i++) out.push(+bs[i].getAttribute('data-d'));
+      return out;
+    })(),
     subs:collectSubs()
   };
   if(V.editingId){
@@ -2202,12 +2184,22 @@ function saveTaskFromModal(){
 }
 function closeTaskModal(){ $('taskMask').classList.remove('open'); V.editingId=null; V.subDraft=[]; }
 
-/* 每日循环任务：完成时自动生成明天的一份（同源防重） */
+/* 每周重复：从基准日期起，往后找第一个命中所选周几的日期 */
+function nextWeekly(base, days){
+  if(!Array.isArray(days) || !days.length) return addDays(base, 1);
+  for(var i=1;i<=7;i++){
+    var d=parseD(base); d.setDate(d.getDate()+i);
+    if(days.indexOf(d.getDay())>=0) return dstr(d);
+  }
+  return addDays(base, 1);
+}
+
+/* 每日/每周循环任务：完成时自动生成下一份（同源防重） */
 function spawnRecurring(t){
-  if(!t || t.repeat!=='daily') return;
+  if(!t || (t.repeat!=='daily' && t.repeat!=='weekly')) return;
   var src = t.repeatSrc || t.id;
   var base = t.deadline || today();
-  var next = addDays(base, 1);
+  var next = (t.repeat==='weekly') ? nextWeekly(base, t.repeatDays) : addDays(base, 1);
   var exists = S.tasks.some(function(x){
     return x.id!==t.id && (x.repeatSrc||x.id)===src && x.status!=='done' && x.deadline===next;
   });
@@ -2215,7 +2207,7 @@ function spawnRecurring(t){
   var nt={};
   for(var k in t) nt[k]=t[k];
   nt.id=uid(); nt.status='todo'; nt.doneAt=null; nt.deadline=next;
-  nt.repeat='daily'; nt.repeatSrc=src; nt.createdAt=today(); nt.order=(Date.now()%10000000)+1;
+  nt.repeat=t.repeat; nt.repeatSrc=src; nt.createdAt=today(); nt.order=(Date.now()%10000000)+1;
   nt.subs = Array.isArray(t.subs) ? t.subs.map(function(s){ return {id:uid(), text:s.text, done:false}; }) : [];
   S.tasks.push(nt);
 }
@@ -2871,42 +2863,7 @@ document.addEventListener('input', function(e){
   }
 });
 
-/* 快速输入提交 */
-$('qcForm').addEventListener('submit', function(e){
-  e.preventDefault();
-  var raw=$('qcInput').value.trim();
-  if(!raw) return;
-  var p=parseCapture(raw);
-  var nt={id:uid(), title:p.title, zone:p.zone, type:p.type, deadline:p.deadline,
-    priority:p.priority, est:p.est, timeType:ttFromZone(p.zone), block:null, note:'',
-    status:'todo', doneAt:null, createdAt:today(), order:Date.now()%10000000};
-  S.tasks.push(nt);
-  if(S.seeded) S.seeded=false;
-  save();
-  $('qcInput').value='';
-  var pn=$('qcParse');
-  pn.innerHTML='<b>已记录</b>　<span class="pv">'+esc(p.title)+'</span>'+
-    '<span class="pv">项目 <i>'+ZONES[p.zone].label+'</i></span>'+
-    '<span class="pv">截止 <i>'+(p.deadline?fmtCN(p.deadline)+'（'+deadlineLabel({deadline:p.deadline}).txt+'）':'未安排')+'</i></span>'+
-    '<span class="pv">'+PRIO[p.priority].label+'</span><span class="pv">'+fmtHM(p.est)+'</span>'+
-    '<span style="color:var(--ink-3)">· 点击任务可补全信息</span>';
-  pn.className='qc-parse show';
-  clearTimeout(pn._tm); pn._tm=setTimeout(function(){ pn.className='qc-parse'; }, 6000);
-  refreshAll();
-  toast('已记下 ✓');
-});
-/* 输入时实时预览解析 */
-$('qcInput').addEventListener('input', function(){
-  var raw=this.value.trim();
-  var pn=$('qcParse');
-  if(!raw){ pn.className='qc-parse'; return; }
-  var p=parseCapture(raw);
-  pn.innerHTML='<span class="pv">识别为 <i>'+esc(p.title.slice(0,26))+(p.title.length>26?'…':'')+'</i></span>'+
-    '<span class="pv">项目 <i>'+ZONES[p.zone].en+'</i></span>'+
-    '<span class="pv">截止 <i>'+(p.deadline?deadlineLabel({deadline:p.deadline}).txt:'未安排')+'</i></span>'+
-    '<span class="pv"><i>'+PRIO[p.priority].label+'</i></span><span class="pv"><i>'+fmtHM(p.est)+'</i></span>';
-  pn.className='qc-parse show';
-});
+/* 快速输入区已移除（原 Quick Capture 卡片） */
 
 /* buddy 发送 */
 $('buddyForm').addEventListener('submit', function(e){
@@ -3053,6 +3010,178 @@ document.addEventListener('DOMContentLoaded', initBoard);
 if(document.readyState==='complete' || document.readyState==='interactive'){
   if(!S) initBoard();
 }
+</script>
+
+<!-- ======================= 右下角专注计时悬浮窗 ======================= -->
+<style>
+#ftWidget{position:fixed;right:16px;bottom:16px;z-index:9998;font-size:13px}
+#ftMini{display:flex;align-items:center;gap:8px;padding:9px 14px 9px 11px;border-radius:999px;background:var(--ink);color:#FAF7F1;box-shadow:var(--shadow-lift);cursor:pointer;user-select:none;transition:transform .15s}
+#ftMini:hover{transform:translateY(-2px)}
+#ftMini .ft-dot{width:7px;height:7px;border-radius:50%;background:#8B857A;flex:none}
+#ftMini.running .ft-dot{background:#7C9B72;animation:ftPulse 1.3s ease-in-out infinite}
+@keyframes ftPulse{0%,100%{opacity:.4}50%{opacity:1}}
+#ftMiniTime{font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:.03em}
+#ftPanel{display:none;width:270px;background:var(--card);border:1px solid var(--line-2);border-radius:16px;box-shadow:var(--shadow-lift);padding:14px;flex-direction:column;gap:10px}
+#ftWidget.open #ftPanel{display:flex}
+#ftWidget.open #ftMini{display:none}
+#ftHead{display:flex;align-items:center;gap:8px}
+#ftHead b{font-size:13.5px}
+#ftHead .ft-x{margin-left:auto;width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:14px}
+#ftHead .ft-x:hover{background:var(--bg-2);color:var(--ink)}
+#ftTask{font-size:12.5px;padding:8px 10px;border-radius:10px;border:1.5px solid var(--line-2);background:var(--bg);width:100%}
+#ftDoing{font-size:11.5px;color:var(--ink-2);min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ftDoing b{color:var(--ink)}
+#ftMode{display:flex;gap:0;background:var(--bg-2);border-radius:10px;padding:3px}
+#ftMode button{flex:1;padding:5px 0;border-radius:8px;font-size:12px;font-weight:600;color:var(--ink-2)}
+#ftMode button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+#ftChips{display:flex;gap:6px}
+#ftChips button{flex:1;padding:5px 0;border-radius:8px;border:1px solid var(--line-2);background:var(--card);font-size:12px;color:var(--ink-2)}
+#ftChips button.on{border-color:var(--ink);color:var(--ink);font-weight:700}
+#ftTime{font-family:var(--serif);font-size:34px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+#ftBar{height:4px;border-radius:99px;background:var(--line);overflow:hidden}
+#ftBarFill{display:block;height:100%;width:0;background:var(--ink);border-radius:99px;transition:width .4s linear}
+#ftBtns{display:flex;gap:8px}
+#ftBtns .btn{flex:1;justify-content:center}
+</style>
+<div id="ftWidget">
+  <div id="ftMini" title="专注计时">
+    <span class="ft-dot"></span>
+    <span>⏱</span>
+    <span id="ftMiniTime">00:00</span>
+  </div>
+  <div id="ftPanel">
+    <div id="ftHead">
+      <b>专注计时</b>
+      <button class="ft-x" id="ftCollapse" title="收起到右下角">›</button>
+    </div>
+    <select id="ftTask"></select>
+    <div id="ftDoing"></div>
+    <div id="ftMode">
+      <button type="button" data-m="up" class="on">正计时</button>
+      <button type="button" data-m="down">倒计时</button>
+    </div>
+    <div id="ftTime">00:00:00</div>
+    <div id="ftBar"><i id="ftBarFill"></i></div>
+    <div id="ftChips" style="display:none">
+      <button data-min="15">15分</button>
+      <button data-min="25" class="on">25分</button>
+      <button data-min="45">45分</button>
+      <button data-min="60">60分</button>
+    </div>
+    <div id="ftBtns">
+      <button class="btn btn-dark btn-sm" id="ftStart">开始</button>
+      <button class="btn btn-sm" id="ftReset">重置</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var FT={mode:'up', minutes:25, running:false, acc:0, resumeAt:0, taskId:'', intId:null, finished:false};
+  var widget=$('ftWidget'), mini=$('ftMini');
+
+  /* 重复下拉联动：选"每周"时显示周几选择 */
+  var fRepeat=$('fRepeat');
+  if(fRepeat) fRepeat.addEventListener('change', function(){
+    $('fWeeklyWrap').style.display = this.value==='weekly' ? '' : 'none';
+  });
+
+  function secs(){ return FT.acc + (FT.running ? (Date.now()-FT.resumeAt)/1000 : 0); }
+  function fmt(s){ s=Math.max(0,Math.floor(s)); var h=Math.floor(s/3600), m=Math.floor((s%3600)/60), x=s%60; return pad2(h)+':'+pad2(m)+':'+pad2(x); }
+  function remain(){ return FT.minutes*60 - secs(); }
+  function render(){
+    var show = FT.mode==='down' ? remain() : secs();
+    $('ftTime').textContent = fmt(show);
+    $('ftMiniTime').textContent = fmt(show);
+    var p = 0;
+    if(FT.mode==='down'){ p = Math.min(100, Math.max(0, secs()/(FT.minutes*60)*100)); }
+    else { p = Math.min(100, (secs()%3600)/3600*100); }
+    $('ftBarFill').style.width = p+'%';
+    mini.classList.toggle('running', FT.running);
+    $('ftStart').textContent = FT.running ? '暂停' : (FT.finished ? '再来一轮' : '开始');
+  }
+  function tick(){
+    render();
+    if(FT.mode==='down' && secs() >= FT.minutes*60) finish();
+  }
+  function ensureLoop(){ if(!FT.intId) FT.intId=setInterval(tick, 500); }
+  function start(){
+    if(FT.mode==='down' && (FT.finished || remain()<=0)){ FT.acc=0; FT.finished=false; }
+    FT.running=true; FT.resumeAt=Date.now(); FT.finished=false;
+    ensureLoop(); render();
+  }
+  function pause(){ if(FT.running){ FT.acc += Date.now()-FT.resumeAt; FT.running=false; } render(); }
+  function reset(){ pause(); FT.acc=0; FT.finished=false; render(); }
+  function finish(){
+    pause(); FT.acc=FT.minutes*60; FT.finished=true;
+    render(); beep(); toast('⏰ 倒计时结束，起来活动一下吧');
+  }
+  function beep(){
+    try{
+      var ctx=new (window.AudioContext||window.webkitAudioContext)();
+      [0,0.3,0.6].forEach(function(dt){
+        var o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine'; o.frequency.value=880;
+        var t0=ctx.currentTime+dt;
+        g.gain.setValueAtTime(0.0001,t0);
+        g.gain.exponentialRampToValueAtTime(0.22,t0+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+0.26);
+        o.start(t0); o.stop(t0+0.28);
+      });
+    }catch(e){}
+  }
+  function fillTasks(){
+    var t0=today();
+    var list=S.tasks.filter(function(t){
+      return t.status!=='done' && t.deadline && t.deadline<=t0;
+    }).sort(function(a,b){ return taskScore(b)-taskScore(a); });
+    var oh='<option value="">从今天的任务里选一个…</option>';
+    list.forEach(function(t){
+      oh+='<option value="'+t.id+'">'+esc(t.title)+' · '+PRIO[t.priority].label+'</option>';
+    });
+    var sel=$('ftTask'); sel.innerHTML=oh;
+    if(FT.taskId && list.some(function(t){ return t.id===FT.taskId; })) sel.value=FT.taskId;
+    showDoing();
+  }
+  function showDoing(){
+    var el=$('ftDoing'), t=FT.taskId?findT(FT.taskId):null;
+    el.innerHTML = t ? ('正在专注：<b>'+esc(t.title)+'</b>') : '';
+  }
+
+  /* 展开 / 收起 */
+  mini.addEventListener('click', function(){ widget.classList.add('open'); fillTasks(); render(); });
+  $('ftCollapse').addEventListener('click', function(e){ e.stopPropagation(); widget.classList.remove('open'); });
+
+  /* 模式切换 */
+  var mb=$('ftMode').querySelectorAll('button');
+  for(var i=0;i<mb.length;i++) mb[i].addEventListener('click', function(){
+    for(var j=0;j<mb.length;j++) mb[j].classList.remove('on');
+    this.classList.add('on');
+    FT.mode=this.getAttribute('data-m');
+    pause(); FT.acc=0; FT.finished=false;
+    $('ftChips').style.display = FT.mode==='down' ? 'flex' : 'none';
+    render();
+  });
+
+  /* 倒计时快捷时长 */
+  var cb=$('ftChips').querySelectorAll('button');
+  for(var k=0;k<cb.length;k++) cb[k].addEventListener('click', function(){
+    for(var j=0;j<cb.length;j++) cb[j].classList.remove('on');
+    this.classList.add('on');
+    FT.minutes=+this.getAttribute('data-min');
+    pause(); FT.acc=0; FT.finished=false;
+    render();
+  });
+
+  /* 任务选择 */
+  $('ftTask').addEventListener('change', function(){ FT.taskId=this.value; showDoing(); });
+
+  /* 开始 / 暂停 / 重置 */
+  $('ftStart').addEventListener('click', function(){ FT.running ? pause() : start(); });
+  $('ftReset').addEventListener('click', reset);
+
+  render();
+})();
 </script>
 </body>
 </html>

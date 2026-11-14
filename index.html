@@ -662,9 +662,8 @@ textarea.finput{resize:vertical;min-height:64px}
           <div class="sec-title">本周复盘</div>
         </div>
       </div>
-      <div class="rv-stats" id="rvStats"></div>
+      <div class="rv-stats" id="rvStats" style="display:none"></div>
       <div id="rvQs"></div>
-      <div class="rv-rec" id="rvRec"></div>
     </section>
   </main>
 
@@ -1675,7 +1674,7 @@ function renderEnergy(){
       var h=dayUsage(ds); if(!isFuture) totalAll+=h;
       if(isFuture){ grid+='<div class="gh-c gh-future"></div>'; continue; }
       var lv=ghLevel(h);
-      grid+='<div class="gh-c gh-l'+lv+(ds===t0h?' gh-today':'')+'" title="'+fmtCN(ds)+' · '+fmtHM(h)+'"></div>';
+      grid+='<div class="gh-c gh-l'+lv+(ds===t0h?' gh-today':'')+'" data-date="'+ds+'" title="'+fmtCN(ds)+' · '+fmtHM(h)+(h>0.02?' · 点击看当天安排':'')+'"></div>';
     }
   }
   var dayLbl=['一','','三','','五','','日'], lblHtml='';
@@ -1839,67 +1838,50 @@ function renderMoods(){
 }
 
 function renderReview(){
-  var st=weekStats(), ws=weekStart(), we=weekEnd();
-  var doneWeek=S.tasks.filter(function(t){ return t.status==='done'&&t.doneAt&&t.doneAt>=ws&&t.doneAt<=we; });
-  var undoneWeek=weekTasks().filter(function(t){ return t.status!=='done'; });
   var hours=weekUsageByCat();
-  var totalH=hours.work+hours.campus+hours.personal;
-
-  $('rvStats').innerHTML =
-    '<div class="stat"><div class="k">本周完成</div><div class="v" style="color:var(--green)">'+doneWeek.length+'</div></div>'+
-    '<div class="stat"><div class="k">未完成</div><div class="v">'+undoneWeek.length+'</div></div>'+
-    '<div class="stat"><div class="k">P0 完成率</div><div class="v" style="color:var(--p1)">'+st.p0rate+'<small>%</small></div></div>';
-
+  /* 只保留：各类别 已用 / 预计 时间卡 + 每天分布柱状图（其余板块已按要求移除） */
   var hoursHtml=Object.keys(TT).map(function(k){
     var target=S.budgets[k]*7;
-    var pct=target? Math.min(100, Math.round(hours[k]/target*100)) : 0;
-    return '<div class="stat"><div class="k">'+TT[k].label+'时间</div><div class="v">'+fmtHM(hours[k])+'<small>/ '+target+'h</small></div></div>';
+    return '<div class="stat"><div class="k">'+TT[k].label+'时间 · 已用/预计</div><div class="v">'+fmtHM(hours[k])+'<small>/ '+target+'h</small></div></div>';
   }).join('');
-
-  var q1 = reviewTimeAllocation(hours,totalH);
-  var notes=S.reviewNotes||{gain:'',improve:'',next:''};
   $('rvQs').innerHTML =
     '<div class="rv-grid">'+hoursHtml+'</div>'+
-    q1+
-    '<div class="rv-q"><div class="q"><i>Q1</i>本周最大的收获是什么？</div>'+
-    '<textarea class="finput rv-note" data-act="reviewNote" data-k="gain" placeholder="自己写…">'+esc(notes.gain)+'</textarea></div>'+
-    '<div class="rv-q"><div class="q"><i>Q2</i>本周哪些地方还可以完善？</div>'+
-    '<textarea class="finput rv-note" data-act="reviewNote" data-k="improve" placeholder="自己写…">'+esc(notes.improve)+'</textarea></div>'+
-    '<div class="rv-q"><div class="q"><i>Q3</i>下周希望做什么？</div>'+
-    '<textarea class="finput rv-note" data-act="reviewNote" data-k="next" placeholder="自己写…">'+esc(notes.next)+'</textarea></div>';
-
-  var rec=nextWeekRec(hours,st);
-  $('rvRec').innerHTML='<div class="k">✦ Next Week Recommendation</div><div class="v">'+esc(rec)+'</div>';
+    reviewWeekChart();
 }
-function reviewTimeAllocation(hours,total){
-  var best=null,bv=0;
-  Object.keys(TT).forEach(function(k){ if(hours[k]>bv){bv=hours[k];best=k;} });
-  var a;
-  if(best){
-    a='本周最大的时间投入在「'+TT[best].label+'」，共 '+fmtHM(bv)+'，占主动时间的 '+Math.round(bv/total*100)+'%。';
-    var tips=[];
-    Object.keys(TT).forEach(function(k){
-      var target=S.budgets[k]*7;
-      if(hours[k] < target*0.3 && target>0) tips.push('「'+TT[k].label+'」投入偏少，预算 '+target+'h，目前只有 '+fmtHM(hours[k])+'。');
-    });
-    if(tips.length) a+='<br><span class="sug">'+tips.join('')+'</span>';
-  }else{
-    a='本周还没有专注记录，先从今天 10h 预算里开始专注吧。';
+/* 每周复盘：周一~周日 每天专注时间分布（工作/校招/个人 三色堆叠柱状图） */
+function reviewWeekChart(){
+  var ws=weekStart();
+  var wd=['一','二','三','四','五','六','日'];
+  var days=[], max=0;
+  for(var i=0;i<7;i++){
+    var ds=addDays(ws,i);
+    var by={work:0,campus:0,personal:0};
+    if(S.tracks) S.tracks.forEach(function(tr){ if(tr.date===ds && by[tr.cat]!==undefined) by[tr.cat]+=tr.minutes; });
+    var tot=by.work+by.campus+by.personal;
+    if(tot>max) max=tot;
+    days.push({ds:ds, by:by, tot:tot});
   }
-  return '<div class="rv-q"><div class="q"><i>AI</i>本周时间分配</div><div class="a">'+a+'</div></div>';
+  var bars=days.map(function(d,i){
+    var segs=Object.keys(TT).map(function(k){
+      if(d.by[k]<=0) return '';
+      var h=Math.round(d.by[k]/(max||1)*100);
+      return '<div class="rv-seg" style="height:'+h+'%;background:'+TT[k].color+'" title="'+TT[k].label+' '+fmtHM(d.by[k]/60)+'"></div>';
+    }).join('');
+    var isToday=d.ds===today();
+    return '<div class="rv-barcol">'+
+      '<div class="rv-tot">'+(d.tot>0?fmtHM(d.tot/60):'')+'</div>'+
+      '<div class="rv-barstack'+(d.tot>0?'':' empty')+(isToday?' today':'')+'">'+segs+'</div>'+
+      '<div class="rv-daylbl'+(isToday?' today':'')+'">'+(isToday?'今':wd[i])+'</div>'+
+    '</div>';
+  }).join('');
+  var legend=Object.keys(TT).map(function(k){ return '<span class="rv-lg"><i style="background:'+TT[k].color+'"></i>'+TT[k].label+'</span>'; }).join('');
+  return '<div class="rv-chart">'+
+    '<div class="rv-chart-head"><b>每天时间分布</b><span class="rv-lgd">'+legend+'</span></div>'+
+    '<div class="rv-bars">'+bars+'</div>'+
+    '<div class="rv-chart-foot">按每天的专注记录统计（工作 / 校招 / 个人 三类）</div>'+
+  '</div>';
 }
-function nextWeekRec(hours,st){
-  var ws=weekStart(),we=weekEnd();
-  var p2done=S.tasks.filter(function(t){ return t.priority==='P2'&&t.status==='done'&&t.doneAt&&t.doneAt>=ws&&t.doneAt<=we; });
-  var impUndone=undoneTasks().filter(function(t){ return t.priority!=='P2'&&t.deadline&&t.deadline<=today(); });
-  if(hours.campus < S.budgets.campus*7*0.4)
-    return '下周在上午固定划出专注时间给校招（简历 / Case / 面试准备），先保长期能力建设，再处理零散事务。';
-  if(impUndone.length && p2done.length>=2)
-    return '下周减少零散 Creator 沟通和 P2 小任务的时间，把上午高精力时间优先留给面试准备和核心增长任务。';
-  if(st.rate>=80)
-    return '本周完成率不错。下周可以稍微上调目标量，但保持每天 10h 以内的主动时间上限。';
-  return '下周把 P0 任务安排在精力最好的上午时段，下午留给沟通和轻量任务，晚间保留个人成长与休息。';
-}
+/* reviewTimeAllocation / nextWeekRec 已随复盘改版移除 */
 
 /* ---------- 统一刷新入口（唯一调度点） ---------- */
 /* 目标周归档：进入新一周时，把上一周的目标连同最终进度存档（保留 12 周） */
@@ -3010,6 +2992,100 @@ document.addEventListener('DOMContentLoaded', initBoard);
 if(document.readyState==='complete' || document.readyState==='interactive'){
   if(!S) initBoard();
 }
+</script>
+
+<!-- ======================= 当天安排弹窗（点热力图打开） ======================= -->
+<style>
+#dayMask .modal{max-width:500px}
+.dd-focus{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;background:var(--bg-2);border-radius:12px;margin-bottom:16px;font-size:12.5px;color:var(--ink-2)}
+.dd-chip{display:inline-flex;align-items:center;gap:5px}
+.dd-chip i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dd-block{margin-bottom:14px}
+.dd-block-h{font-size:10.5px;font-weight:700;color:var(--ink-3);letter-spacing:.1em;margin-bottom:6px}
+.dd-block .tcard{background:var(--bg)}
+.dd-empty{font-size:12px;color:var(--ink-3);padding:14px 0 4px;text-align:center}
+.rv-chart{margin-top:20px;padding-top:16px;border-top:1px dashed var(--line-2)}
+.rv-chart-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.rv-chart-head b{font-size:13px}
+.rv-lgd{margin-left:auto;display:flex;gap:12px;font-size:11px;color:var(--ink-2)}
+.rv-lg{display:inline-flex;align-items:center;gap:5px}
+.rv-lg i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.rv-bars{display:flex;gap:8px;align-items:stretch}
+.rv-barcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
+.rv-tot{font-size:9.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;height:13px;line-height:13px}
+.rv-barstack{width:100%;max-width:46px;flex:1;display:flex;flex-direction:column;justify-content:flex-end;background:var(--bg-2);border-radius:8px;overflow:hidden;min-height:120px;transition:height .3s}
+.rv-barstack.empty{background:repeating-linear-gradient(45deg,transparent,transparent 4px,var(--line) 4px,var(--line) 5px)}
+.rv-barstack.today{outline:1.5px solid var(--green);outline-offset:1px}
+.rv-seg{width:100%;flex:none}
+.rv-daylbl{font-size:10.5px;color:var(--ink-3);font-weight:600}
+.rv-daylbl.today{color:var(--green);font-weight:700}
+.rv-chart-foot{margin-top:10px;font-size:10.5px;color:var(--ink-3)}
+</style>
+<div class="modal-mask" id="dayMask">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="dayDetailTitle">当天安排</div>
+      <div class="spacer"></div>
+      <button class="mclose" data-act="closeDay">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="dayDetailBody"></div>
+  </div>
+</div>
+<script>
+/* 热力图 → 当天安排 */
+function openDayDetail(ds){
+  if(!ds) return;
+  var wd=['周日','周一','周二','周三','周四','周五','周六'];
+  var d=parseD(ds);
+  $('dayDetailTitle').textContent = fmtCN(ds)+' · '+wd[d.getDay()]+(ds===today()?' · 今天':'');
+  var html='';
+  /* 当天专注记录 */
+  var seg='', tot=0;
+  Object.keys(TT).forEach(function(k){
+    var m=0;
+    if(S.tracks) S.tracks.forEach(function(tr){ if(tr.date===ds && tr.cat===k) m+=tr.minutes; });
+    if(m>0) seg+='<span class="dd-chip"><i style="background:'+TT[k].color+'"></i>'+TT[k].label+' '+fmtHM(m/60)+'</span>';
+    tot+=m;
+  });
+  html+='<div class="dd-focus">'+(tot>0
+    ? ('当天专注 <b>'+fmtHM(tot/60)+'</b>　'+seg)
+    : '这天没有专注记录')+'</div>';
+  /* 当天任务安排：上午/下午/晚上/未分时段 */
+  var BDEF=[['morning','上午'],['afternoon','下午'],['evening','晚上']];
+  var dayTasks=S.tasks.filter(function(t){ return t.deadline===ds; });
+  var shown=0;
+  BDEF.forEach(function(b){
+    var zt=dayTasks.filter(function(t){ return (t.block||'')===b[0]; });
+    var customs=(ds===today() && S.blocks && S.blocks[b[0]]) ? S.blocks[b[0]] : [];
+    if(!zt.length && !customs.length) return;
+    shown++;
+    html+='<div class="dd-block"><div class="dd-block-h">'+b[1]+'</div>'+
+      zt.map(wcolTaskHTML).join('')+
+      customs.map(function(e){
+        return '<div class="bentry"><span class="bt">'+esc(e.time||'--:--')+'</span><span class="bl">'+esc(e.label)+'</span></div>';
+      }).join('')+
+    '</div>';
+  });
+  var unt=dayTasks.filter(function(t){ return !(t.block==='morning'||t.block==='afternoon'||t.block==='evening'); });
+  if(unt.length){
+    shown++;
+    html+='<div class="dd-block"><div class="dd-block-h">未分时段</div>'+unt.map(wcolTaskHTML).join('')+'</div>';
+  }
+  if(!shown) html+='<div class="dd-empty">这天没有安排任务</div>';
+  $('dayDetailBody').innerHTML=html;
+  $('dayMask').classList.add('open');
+}
+function closeDayDetail(){ $('dayMask').classList.remove('open'); }
+$('heatMap').addEventListener('click', function(e){
+  var c=e.target.closest && e.target.closest('.gh-c');
+  if(c && c.getAttribute('data-date')) openDayDetail(c.getAttribute('data-date'));
+});
+$('dayMask').addEventListener('click', function(e){ if(e.target===this) closeDayDetail(); });
+document.addEventListener('click', function(e){
+  if(e.target.closest && e.target.closest('[data-act="closeDay"]')) closeDayDetail();
+});
 </script>
 
 <!-- ======================= 右下角专注计时悬浮窗 ======================= -->

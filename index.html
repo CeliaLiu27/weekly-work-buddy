@@ -462,6 +462,24 @@ textarea.finput{resize:vertical;min-height:64px}
 .wtc .chip{font-size:9px;padding:1px 5px}
 .wtc .chip-est{font-size:9.5px}
 
+/* ---------- 时段内时间线（左竖轴 + 时间点） ---------- */
+.tl-zone{position:relative;padding-top:1px}
+.tl-zone:before{content:'';position:absolute;left:3.5px;top:9px;bottom:6px;width:2px;border-radius:2px;background:#D3C9B6}
+.tl-item{position:relative;padding-left:14px}
+.tl-item+.tl-item{margin-top:6px}
+.tl-item:before{content:'';position:absolute;left:1px;top:5px;width:7px;height:7px;border-radius:99px;background:var(--green);box-shadow:0 0 0 2.5px #FBF9F4;z-index:1}
+.tl-item.done:before{background:var(--done)}
+.tl-h{display:flex;align-items:baseline;gap:4px;margin:0 0 3px;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl-t{font-size:9.5px;font-weight:800;color:var(--green);letter-spacing:.02em}
+.tl-item.done .tl-t{color:var(--ink-3)}
+.tl-t2{font-size:8.5px;font-weight:600;color:var(--ink-3)}
+.tl-sep{height:1px;margin:8px 28% 6px 3px;background:repeating-linear-gradient(90deg,#E0D8C8 0 3px,transparent 3px 7px)}
+.tcard.drop-before:before,.tcard.drop-after:after{content:'';position:absolute;left:3px;right:3px;height:2.5px;border-radius:2px;background:var(--green);z-index:3}
+.tcard.drop-before:before{top:-4px}
+.tcard.drop-after:after{bottom:-4px}
+.tl-item>.tcard.drop-before:before{top:-17px}   /* 定时卡插到时间标签上方 */
+.tcard.dragging{opacity:.4}
+
 /* ---------- 白板备忘录（原工作区位置） ---------- */
 .memo-toolbar{display:flex;align-items:center;gap:2px;margin-bottom:8px;padding:4px 6px;border:1.5px solid var(--line-2);border-radius:10px;background:var(--bg);width:-moz-fit-content;width:fit-content;user-select:none}
 .mtbtn{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 6px;border:none;background:transparent;border-radius:7px;cursor:pointer;color:var(--ink-2);font-size:13.5px;font-family:inherit}
@@ -788,6 +806,10 @@ textarea.finput{resize:vertical;min-height:64px}
           <option value="campus">校招</option>
           <option value="personal">个人</option>
         </select>
+      </div>
+      <div class="fitem">
+        <label class="flabel">开始时间</label>
+        <input class="finput" id="fStart" type="time" title="填了就会挂到时间线上；留空则是可以自由拖动排序的待办">
       </div>
       <div class="fitem">
         <label class="flabel">安排到时段</label>
@@ -1155,6 +1177,13 @@ function load(){
       S.memo = (typeof d.memo==='string')? d.memo : '';
       S.memos = Array.isArray(d.memos)? d.memos : [];
       recoverMemo(S);   /* v6：一次性找回备忘录（本地文件源 → 线上源） */
+      /* v7：标题里的“16:00 xxx”认成时间线起点，并按时间把已有任务排好（只跑一次） */
+      if((d.dataVersion||0) < 7){
+        migrateStartTimes();
+        sortTimedGroups();
+        S.dataVersion = 7;
+        save();
+      }
       return;
     }catch(e){ /* 数据损坏则重建 */ }
   }
@@ -1544,8 +1573,9 @@ function renderToday(){
 
 
 /* 周视图列内紧凑任务卡：保留 .tcard 类以复用拖拽逻辑 */
-function wcolTaskHTML(t){
+function wcolTaskHTML(t, opts){
   var z=ZONES[t.zone]||ZONES.career;
+  var noEst = opts && opts.noEst;
   return '<div class="tcard wtc'+(t.status==='done'?' done':'')+'" draggable="true" data-id="'+t.id+'">'+
     '<button class="tcheck" data-act="toggleTask" data-id="'+t.id+'" title="完成 / 取消完成">'+
       '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>'+
@@ -1554,10 +1584,162 @@ function wcolTaskHTML(t){
       '<div class="t-meta">'+
         '<span class="chip '+PRIO[t.priority].cls+'">'+PRIO[t.priority].label+'</span>'+
         '<span class="zdot" style="background:'+z.color+'" title="'+esc(z.label)+'"></span>'+
-        '<span class="chip-est">'+fmtHM(t.est)+'</span>'+
+        (noEst?'':'<span class="chip-est">'+fmtHM(t.est)+'</span>')+
       '</div>'+
     '</div>'+
   '</div>';
+}
+
+/* ---------- 时间线与排序：工具 ---------- */
+function hm2min(s){ var p=String(s||'').split(':'); if(p.length<2) return null; var h=parseInt(p[0],10), m=parseInt(p[1],10); if(isNaN(h)||isNaN(m)) return null; return h*60+m; }
+function min2hm(m){ m=((Math.round(m)%1440)+1440)%1440; return pad2(Math.floor(m/60))+':'+pad2(m%60); }
+var BLK_RANGE={morning:[5*60,11*60+59], afternoon:[12*60,17*60+59], evening:[18*60,23*60+59]};
+var BLK_DEF={morning:'09:00', afternoon:'14:00', evening:'20:00'};
+function blockFromTime(hm){
+  var m=hm2min(hm); if(m===null) return null;
+  if(m<12*60) return 'morning';
+  if(m<18*60) return 'afternoon';
+  return 'evening';
+}
+function clampStartToBlock(start, blk){
+  if(!start || !blk || !BLK_RANGE[blk]) return start;
+  var m=hm2min(start); if(m===null) return start;
+  var r=BLK_RANGE[blk];
+  if(m<r[0] || m>r[1]) return BLK_DEF[blk];
+  return start;
+}
+/* 从标题里认出时间写法：16:00 / 16：30 / 下午3点 / 晚上8点半 / 10:00-11:30 */
+var TIME_PRE={'凌晨':0,'早上':0,'早晨':0,'上午':0,'中午':12,'下午':12,'傍晚':12,'晚上':12,'夜里':12,'晚':12,'早':0,'午':12};
+function parseTimeFromTitle(title, blk){
+  var s=String(title||'');
+  if(!s) return null;
+  var m=null, pre='', h=0, mi=0, endM=null;
+  /* 冒号写法，可带区间 */
+  var m1=s.match(/(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|晚|早|午)?\s*(\d{1,2})\s*[:：]\s*(\d{2})(?:\s*[-–—~～至到]\s*(\d{1,2})\s*[:：]\s*(\d{2}))?/);
+  if(m1){
+    pre=m1[1]||''; h=parseInt(m1[2],10); mi=parseInt(m1[3],10);
+    if(m1[4] && m1[5]!==undefined){
+      var eh=parseInt(m1[4],10), em=parseInt(m1[5],10);
+      if(!isNaN(eh)&&!isNaN(em)) endM=eh*60+em;
+    }
+    m=m1;
+  }else{
+    /* 中文“点”写法 */
+    var m2=s.match(/(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里|晚|早|午)?\s*(\d{1,2})\s*点\s*(半|\d{1,2}\s*分?)?/);
+    if(!m2) return null;
+    pre=m2[1]||''; h=parseInt(m2[2],10);
+    var mm=m2[3]||'';
+    if(mm==='半') mi=30;
+    else if(mm){ var p2=parseInt(mm,10); if(!isNaN(p2)) mi=p2; }
+    m=m2;
+  }
+  if(isNaN(h) || h>24 || mi>59) return null;
+  if(pre){
+    var pv=TIME_PRE[pre];
+    if(pv===0){ if(h===12) h=0; }
+    else if(pv===12){ if(h<12) h+=12; }
+  }else if(!pre){
+    /* 光写“3点”这种：1~6 点按下午算，7 点以上看所放时段 */
+    if(h>=1 && h<=6) h+=12;
+    else if(h<=11 && (blk==='afternoon'||blk==='evening')) h+=12;
+  }
+  if(h===24) h=0;
+  var startM=h*60+mi;
+  var dur=null;
+  if(endM!==null && endM>startM) dur=Math.max(0.25, Math.round((endM-startM)/15)*0.25);
+  var clean=s.replace(m[0],' ');
+  clean=clean.replace(/^[\s·•\-—–~～、,，:：|｜/]+/,'').replace(/[\s·•\-—–~～、,，:：|｜/]+$/,'').replace(/\s{2,}/g,' ');
+  if(!clean) clean=s;   /* 标题只有一个时间就别清空 */
+  return {start:min2hm(startM), dur:dur, clean:clean};
+}
+/* 老数据迁移：标题里带时间的，抓成 start 并从标题里去掉（只跑一次，有 start 就跳过） */
+function migrateStartTimes(){
+  var changed=false;
+  (S.tasks||[]).forEach(function(t){
+    if(t.start || !t.title) return;
+    var pr=parseTimeFromTitle(t.title, t.block||null);
+    if(!pr) return;
+    t.start=pr.start;
+    if(pr.clean && pr.clean!==t.title) t.title=pr.clean;
+    if(pr.dur && (!t.est || Number(t.est)===1)) t.est=pr.dur;
+    changed=true;
+  });
+  return changed;
+}
+/* 同一“某天+某时段”为一组：组的先后直接用 S.tasks 数组顺序表达 */
+function tGroupKey(t){ return (t.deadline||'')+'|'+((t.block===undefined||t.block===null)?'':t.block); }
+/* 一次性：把每个时段里已有的定时任务按开始时间排好 */
+function sortTimedGroups(){
+  var groups={};
+  (S.tasks||[]).forEach(function(t){
+    if(!t.start) return;
+    var k=tGroupKey(t);
+    (groups[k]=groups[k]||[]).push(t);
+  });
+  Object.keys(groups).forEach(function(k){
+    groups[k].slice().sort(function(a,b){ return a.start<b.start?-1:(a.start>b.start?1:0); })
+      .forEach(function(t){ placeByTime(t); });
+  });
+}
+/* 设了开始时间的任务，保存时自动落到该时段里按时间该在的位置 */
+function placeByTime(t){
+  if(!t || !t.start) return;
+  var arr=S.tasks, key=tGroupKey(t), from=arr.indexOf(t);
+  if(from<0) return;
+  arr.splice(from,1);
+  var to=-1, lastTimed=-1;
+  for(var i=0;i<arr.length;i++){
+    var x=arr[i];
+    if(tGroupKey(x)!==key) continue;
+    if(!x.start){ if(to<0) to=i; continue; }   /* 没时间的排在时间线下面 */
+    lastTimed=i;
+    if(to<0 && x.start>t.start) to=i;
+  }
+  if(to<0) to = (lastTimed>=0) ? lastTimed+1 : arr.length;
+  arr.splice(to,0,t);
+}
+function reorderInGroup(t, target, after){
+  if(!t) return;
+  var arr=S.tasks, from=arr.indexOf(t);
+  if(from<0) return;
+  var key=tGroupKey(t);
+  arr.splice(from,1);
+  var to=-1;
+  if(target && target.id!==t.id && tGroupKey(target)===key){
+    var ti=arr.indexOf(target);
+    if(ti>=0) to=ti+(after?1:0);
+  }
+  if(to<0){
+    var last=-1;
+    for(var i=0;i<arr.length;i++) if(tGroupKey(arr[i])===key) last=i;
+    to = (last<0) ? arr.length : last+1;
+  }
+  arr.splice(to,0,t);
+}
+
+/* 时间轴上的任务卡：左边时间点 + 卡片 */
+function wcolTimedHTML(t){
+  var st=t.start;
+  var end=st ? min2hm((hm2min(st)||0)+Math.round((Number(t.est)||0)*60)) : '';
+  return '<div class="tl-item'+(t.status==='done'?' done':'')+'">'+
+    '<div class="tl-h"><span class="tl-t">'+esc(st)+'</span>'+(end?'<span class="tl-t2">– '+esc(end)+'</span>':'')+'</div>'+
+    wcolTaskHTML(t, {noEst:true})+
+  '</div>';
+}
+/* 一个时段内的任务列表：顺序按 S.tasks（拖到哪就排到哪），连续的定时任务拼成一段竖轴 */
+function tasksRunHTML(list){
+  var html='', run=[];
+  function flush(){
+    if(!run.length) return;
+    html+='<div class="tl-zone">'+run.map(wcolTimedHTML).join('')+'</div>';
+    run=[];
+  }
+  (list||[]).forEach(function(t){
+    if(t.start) run.push(t);
+    else { flush(); html+=wcolTaskHTML(t); }
+  });
+  flush();
+  return html;
 }
 
 /* 周视图：每天分 上午/下午/晚上 三个可拖放分区（合并原"今天怎么安排"） */
@@ -1574,9 +1756,10 @@ function renderBoard(){
     BDEF.forEach(function(b){
       var k=b[0];
       var zt=dayTasks.filter(function(t){ return (t.block||'')===k; });
-      var customs=(ds===t0 && S.blocks && S.blocks[k]) ? S.blocks[k] : [];
       var zh='';
-      zt.forEach(function(t){ zh+=wcolTaskHTML(t); });
+      var customs=(ds===t0 && S.blocks && S.blocks[k]) ? S.blocks[k] : [];
+      zh+=tasksRunHTML(zt);
+      if(zt.length && customs.length) zh+='<div class="tl-sep"></div>';
       customs.forEach(function(e){
         zh+='<div class="bentry"><span class="bt">'+esc(e.time||'--:--')+'</span><span class="bl">'+esc(e.label)+'</span>'+
           '<button class="bx" data-act="blockEntryDel" data-k="'+k+'" data-id="'+e.id+'" title="删除">'+
@@ -1588,7 +1771,7 @@ function renderBoard(){
       '</div>';
     });
     var unt=dayTasks.filter(function(t){ return !(t.block==='morning'||t.block==='afternoon'||t.block==='evening'); });
-    var unHtml = unt.length ? '<div class="wcol-un"><div class="wcol-un-h">未分时段</div>'+unt.map(wcolTaskHTML).join('')+'</div>' : '';
+    var unHtml = unt.length ? '<div class="wcol-un" data-dropblock="un" data-dropday="'+ds+'" title="拖到这里可以拿出时段"><div class="wcol-un-h">未分时段</div>'+tasksRunHTML(unt)+'</div>' : '';
     cols+='<div class="wcol'+(ds===t0?' today':'')+'" data-dow="'+i+'">'+
       '<div class="wcol-h"><span class="wcol-d">'+wd[i]+'</span>'+
         '<span class="wcol-date">'+parseInt(ds.slice(5,7),10)+'/'+parseInt(ds.slice(8,10),10)+'</span>'+
@@ -2075,6 +2258,7 @@ function openTaskModal(id, presetDate){
   $('fType').value = t?(t.type||''):'';
   $('fDeadline').value = t?(t.deadline||''):(presetDate||'');
   $('fEst').value = t?t.est:1;
+  $('fStart').value = t?(t.start||''):'';
   $('fTT').value = t?(t.timeType||ttFromZone(t.zone)):'work';
   $('fBlock').value = t?(t.block||''):'';
   $('fRepeat').value = t?(t.repeat||''):'';
@@ -2134,14 +2318,27 @@ function collectSubs(){
   });
 }
 function saveTaskFromModal(){
-  var title=$('fTitle').value.trim();
-  if(!title){ toast('先写一下任务名称'); $('fTitle').focus(); return; }
+  var rawTitle=$('fTitle').value.trim();
+  if(!rawTitle){ toast('先写一下任务名称'); $('fTitle').focus(); return; }
   var prio=$('fPrio')._val||'P2';
+  var blkVal=$('fBlock').value||null;
+  var startVal=$('fStart').value||'';
+  var title=rawTitle, autoDur=null;
+  /* 标题里写了时间但没填「开始时间」→ 自动认出来，并从标题里去掉 */
+  var pr=parseTimeFromTitle(rawTitle, blkVal);
+  if(pr && !startVal){
+    startVal=pr.start;
+    if(pr.clean) title=pr.clean;
+    autoDur=pr.dur;
+  }
+  /* 只填了开始时间、没选时段 → 按时间自动归到上午/下午/晚上 */
+  if(startVal && !blkVal) blkVal=blockFromTime(startVal);
   var data={
     title:title, zone:$('fZone').value, type:$('fType').value.trim(),
     deadline:$('fDeadline').value||null, priority:prio,
-    est:Math.max(0.25, parseFloat($('fEst').value)||1),
-    timeType:$('fTT').value, block:$('fBlock').value||null,
+    est:Math.max(0.25, parseFloat($('fEst').value)||autoDur||1),
+    timeType:$('fTT').value, block:blkVal,
+    start:startVal||null,
     repeat:$('fRepeat') ? $('fRepeat').value : '',
     repeatDays:(function(){
       if(!$('fRepeat') || $('fRepeat').value!=='weekly') return null;
@@ -2153,13 +2350,14 @@ function saveTaskFromModal(){
   };
   if(V.editingId){
     var t=findT(V.editingId);
-    if(t) Object.assign(t, data);
+    if(t){ Object.assign(t, data); placeByTime(t); }
     toast('已更新');
   }else{
     var nt={id:uid(), status:'todo', doneAt:null, createdAt:today(), order:Date.now()%10000000};
     for(var k in data) nt[k]=data[k];
     S.tasks.push(nt);
-    toast('已添加');
+    placeByTime(nt);
+    toast(startVal?('已加入时间线 '+startVal):'已添加');
   }
   if(S.seeded) S.seeded=false;
   save(); closeTaskModal(); refreshAll();
@@ -2942,37 +3140,70 @@ document.addEventListener('dragstart', function(e){
 document.addEventListener('dragend', function(e){
   var card=e.target.closest && (e.target.closest('.tcard') || e.target.closest('.mustdo'));
   if(card) card.classList.remove('dragging');
-  V.dragId=null;
+  V.dragId=null; V.dropId=null; V.dropAfter=false;
+  clearDropMarks();
   var zs=document.querySelectorAll('.dbzone.dragover, .bzone.dragover');
   for(var i=0;i<zs.length;i++) zs[i].classList.remove('dragover');
 });
 document.addEventListener('dragover', function(e){
   var zone=e.target.closest && e.target.closest('[data-dropblock]');
-  if(zone){ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='move'; zone.classList.add('dragover'); }
+  if(zone){
+    e.preventDefault();
+    if(e.dataTransfer) e.dataTransfer.dropEffect='move';
+    zone.classList.add('dragover');
+    /* 悬停在某张卡片上 → 显示"插到这张前面 / 后面"的指示线 */
+    var card=e.target.closest && e.target.closest('.tcard');
+    clearDropMarks();
+    V.dropId=null; V.dropAfter=false;
+    if(card && V.dragId && card.getAttribute('data-id')!==V.dragId){
+      var r=card.getBoundingClientRect();
+      var after=(e.clientY - r.top) > r.height/2;
+      card.classList.add(after?'drop-after':'drop-before');
+      V.dropId=card.getAttribute('data-id');
+      V.dropAfter=after;
+    }
+  }
 });
 document.addEventListener('dragleave', function(e){
   var zone=e.target.closest && e.target.closest('[data-dropblock]');
   if(zone && !zone.contains(e.relatedTarget)) zone.classList.remove('dragover');
 });
+function clearDropMarks(){
+  var els=document.querySelectorAll('.tcard.drop-before,.tcard.drop-after');
+  for(var i=0;i<els.length;i++) els[i].classList.remove('drop-before','drop-after');
+}
 document.addEventListener('drop', function(e){
   var zone=e.target.closest && e.target.closest('[data-dropblock]');
   var id=V.dragId || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : null);
   if(zone && id){
     e.preventDefault();
     zone.classList.remove('dragover');
+    var dropId=V.dropId, dropAfter=!!V.dropAfter;
+    clearDropMarks();
     var t=findT(id);
     if(t){
       var blk=zone.getAttribute('data-dropblock');
-      var dd=zone.getAttribute('data-dropday');   /* 周看板里拖到"某天某时段" */
+      if(blk==='un') blk=null;                     /* 未分时段 */
+      var dd=zone.getAttribute('data-dropday');    /* 周看板里拖到"某天某时段" */
+      var oldBlk=t.block||null, oldDay=t.deadline||null;
+      var moved=!!(dd && oldDay!==dd) || oldBlk!==blk;
       t.block=blk;
       if(dd){ t.deadline=dd; }
       else if(!t.deadline || t.deadline<today()){ t.deadline=today(); }
+      /* 定时任务换时段/换天后，时间落在新时段之外就顺手挪进来 */
+      var adjTime=null;
+      if(t.start && moved){
+        var ns=clampStartToBlock(t.start, blk);
+        if(ns!==t.start){ t.start=ns; adjTime=ns; }
+      }
+      var target=dropId ? findT(dropId) : null;
+      reorderInGroup(t, target, dropAfter);
       if(S.seeded) S.seeded=false;
       save(); refreshAll();
       var names={morning:'上午',afternoon:'下午',evening:'晚上'};
-      toast('已安排到 '+(dd?fmtCN(dd)+' ':'')+names[blk]);
+      if(moved || adjTime) toast('已安排到 '+(dd?fmtCN(dd)+' ':'')+(names[blk]||'未分时段')+(adjTime?' · 时间改为 '+adjTime:''));
     }
-    V.dragId=null;
+    V.dragId=null; V.dropId=null; V.dropAfter=false;
     return;
   }
 });

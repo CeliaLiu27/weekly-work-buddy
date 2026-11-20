@@ -589,20 +589,32 @@ textarea.finput{resize:vertical;min-height:64px}
     <!-- glance strip -->
     <div class="glance" id="glance"></div>
 
-    <!-- 01 This Week -->
+    <!-- 01 Review · 复盘（周 / 月 / 年，历史数据随时回看） -->
     <section class="card sec">
       <div class="sec-head">
         <span class="sec-no">01</span>
         <div>
-          <div class="sec-en">This Week</div>
-          <div class="sec-title">本周概览</div>
+          <div class="sec-en" id="rvEn">Weekly Review</div>
+          <div class="sec-title" id="rvTitle">本周复盘</div>
+        </div>
+        <div class="spacer"></div>
+        <div class="rv-nav">
+          <button class="btn btn-sm" data-act="rvNav" data-d="-1" title="上一个周期">‹</button>
+          <button class="btn btn-sm btn-ghost" data-act="rvToday" id="rvTodayBtn">回到本周</button>
+          <button class="btn btn-sm" data-act="rvNav" data-d="1" id="rvNextBtn" title="下一个周期">›</button>
+          <span class="rv-modes">
+            <button class="rv-mode on" data-act="rvMode" data-m="week">周</button>
+            <button class="rv-mode" data-act="rvMode" data-m="month">月</button>
+            <button class="rv-mode" data-act="rvMode" data-m="year">年</button>
+          </span>
         </div>
       </div>
       <div class="week-row">
-        <div class="week-range" id="weekRange">—</div>
-        <div class="week-range-sub" id="weekRangeSub"></div>
+        <div class="week-range" id="rvRange">—</div>
+        <div class="week-range-sub" id="rvRangeSub"></div>
       </div>
-      <div class="stat-row" id="weekStats"></div>
+      <div class="rv-stats" id="rvStats" style="display:none"></div>
+      <div id="rvQs"></div>
     </section>
 
     <!-- 02 Task board · 周视图（含每日 上/中/晚） -->
@@ -671,18 +683,6 @@ textarea.finput{resize:vertical;min-height:64px}
       </div>
     </section>
 
-    <!-- 06 Weekly Review -->
-    <section class="card sec">
-      <div class="sec-head">
-        <span class="sec-no">04</span>
-        <div>
-          <div class="sec-en">Weekly Review</div>
-          <div class="sec-title">本周复盘</div>
-        </div>
-      </div>
-      <div class="rv-stats" id="rvStats" style="display:none"></div>
-      <div id="rvQs"></div>
-    </section>
   </main>
 
   <!-- ======================= RIGHT SIDE ======================= -->
@@ -1074,15 +1074,17 @@ var V = {              /* 视图状态（不持久化） */
   subDraft:[], subOpen:null,
   goalHist:-1,   /* -1=本周；>=0 表示正在查看 goalHistory 中第几周的存档 */
   goalExpand:null,  /* 展开了子事项的目标 id */
-  showOff:false     /* 展开"未安排/其他日期"任务列表 */
+  showOff:false,    /* 展开"未安排/其他日期"任务列表 */
+  rvMode:'week',    /* 复盘视角：week / month / year */
+  rvAnchor:null     /* 复盘当前查看的周期内锚点日期（null=今天） */
 };
 
 /* ---------- 数据层 ---------- */
 function defaultState(){
-  return { tasks:[], goals:[], budgets:{work:5,campus:1,personal:2}, energy:{},
+  return { tasks:[], goals:[], budgets:{work:5,campus:2,personal:3}, energy:{},
            blocks:{morning:[],afternoon:[],evening:[]}, seeded:false,
            tracks:[], reviewNotes:{gain:'',improve:'',next:''},
-           manualUsage:{}, memo:'', memos:[], dataVersion:3,
+           manualUsage:{}, memo:'', memos:[], dataVersion:8,
            goalHistory:[], goalWeek:'',   /* 每周目标存档：跨周时自动把当周目标+最终进度归档 */
            habits:[{id:'h_sleep',emoji:'😴',name:'睡觉'},{id:'h_fit',emoji:'💪',name:'健身'}],
            habitChecks:{}, moods:{} };
@@ -1184,6 +1186,12 @@ function load(){
         S.dataVersion = 7;
         save();
       }
+      /* v8：每周预算改为 工作5天 / 校招2天 / 个人3天（每天小时数 5/2/3，一次性） */
+      if((d.dataVersion||0) < 8){
+        S.budgets = {work:5, campus:2, personal:3};
+        S.dataVersion = 8;
+        save();
+      }
       return;
     }catch(e){ /* 数据损坏则重建 */ }
   }
@@ -1200,10 +1208,10 @@ function load(){
           block:null, note:t.note||'', status: (t.status==='done'||t.done)?'done':'todo',
           doneAt: t.doneAt||null, createdAt: t.createdAt||today(), order: 0 };
       });
-      S.budgets={work:5,campus:1,personal:2};
+      S.budgets={work:5,campus:2,personal:3};
       S.tracks=[]; S.reviewNotes={gain:'',improve:'',next:''};
       S.seeded=false;
-      S.dataVersion=5;
+      S.dataVersion=8;
       save();
       return;
     }
@@ -1418,17 +1426,45 @@ function renderGlance(){
   el.innerHTML=html;
 }
 
-function renderThisWeek(){
-  var ws=weekStart(), we=weekEnd();
-  $('weekRange').textContent = fmtEN(ws)+' — '+fmtEN(we);
-  var st=weekStats();
-  $('weekRangeSub').textContent = fmtCN(ws)+' – '+fmtCN(we)+' · '+st.total+' 项任务在本周';
-  $('weekStats').innerHTML =
-    '<div class="stat"><div class="k">本周任务</div><div class="v">'+st.total+'</div></div>'+
-    '<div class="stat"><div class="k">已完成</div><div class="v" style="color:var(--green)">'+st.done+'</div></div>'+
-    '<div class="stat"><div class="k">P0 任务</div><div class="v" style="color:var(--p0)">'+st.p0+'</div></div>'+
-    '<div class="stat"><div class="k">本周完成率</div><div class="v acc">'+st.rate+'<small>%</small></div></div>'+
-    '<div class="stat"><div class="k">P0 完成率</div><div class="v" style="color:var(--p1)">'+st.p0rate+'<small>%</small></div></div>';
+/* 复盘区（01 位）：按 周 / 月 / 年 查看，历史数据来自 tracks + manualUsage，永久保留 */
+function rvPeriod(mode, anchor){
+  if(mode==='month'){
+    var m=parseD(anchor);
+    var s=m.getFullYear()+'-'+pad2(m.getMonth()+1)+'-01';
+    return {s:s, e:dstr(new Date(m.getFullYear(), m.getMonth()+1, 0))};
+  }
+  if(mode==='year'){
+    var y=parseD(anchor).getFullYear();
+    return {s:y+'-01-01', e:y+'-12-31'};
+  }
+  var d=parseD(anchor); var off=(d.getDay()===0)?6:(d.getDay()-1);
+  var ws=dstr(new Date(d.getFullYear(), d.getMonth(), d.getDate()-off));
+  return {s:ws, e:addDays(ws,6)};
+}
+function rvShift(d){
+  var mode=V.rvMode||'week';
+  var a=parseD(V.rvAnchor||today());
+  if(mode==='week') a.setDate(a.getDate()+d*7);
+  else if(mode==='month') a.setMonth(a.getMonth()+d);
+  else a.setFullYear(a.getFullYear()+d);
+  var na=dstr(a);
+  if(na>today()) return;   /* 不允许查看未来 */
+  V.rvAnchor=na; refreshAll();
+}
+function rangeUsageByCat(rg){
+  var out={work:0,campus:0,personal:0};
+  if(S.tracks) S.tracks.forEach(function(tr){ if(tr.date>=rg.s && tr.date<=rg.e && out[tr.cat]!==undefined) out[tr.cat]+=tr.minutes/60; });
+  if(S.manualUsage) Object.keys(S.manualUsage).forEach(function(ds){
+    if(ds<rg.s || ds>rg.e) return;
+    var m=S.manualUsage[ds];
+    Object.keys(out).forEach(function(k){ if(typeof m[k]==='number') out[k]+=m[k]; });
+  });
+  return out;
+}
+function rvTitleFor(rg, mode){
+  if(mode==='month'){ var d=parseD(rg.s); var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return M[d.getMonth()]+' '+d.getFullYear(); }
+  if(mode==='year') return String(parseD(rg.s).getFullYear());
+  return fmtEN(rg.s)+' — '+fmtEN(rg.e);
 }
 
 function renderGoals(){
@@ -2021,47 +2057,90 @@ function renderMoods(){
 }
 
 function renderReview(){
-  var hours=weekUsageByCat();
-  /* 只保留：各类别 已用 / 预计 时间卡 + 每天分布柱状图（其余板块已按要求移除） */
+  var mode=V.rvMode||'week';
+  var rg=rvPeriod(mode, V.rvAnchor||today());
+  var cur=rvPeriod(mode, today());
+  var isCur=(rg.s===cur.s && rg.e===cur.e);
+  var mb=document.querySelectorAll('.rv-mode');
+  for(var mi=0;mi<mb.length;mi++) mb[mi].classList.toggle('on', mb[mi].getAttribute('data-m')===mode);
+  var enEl=$('rvEn'), ttl=$('rvTitle');
+  if(enEl) enEl.textContent = mode==='week'?'Weekly Review':mode==='month'?'Monthly Review':'Yearly Review';
+  if(ttl) ttl.textContent = isCur ? (mode==='week'?'本周复盘':mode==='month'?'本月复盘':'今年复盘') : (mode==='week'?'周复盘':mode==='month'?'月复盘':'年复盘');
+  var rEl=$('rvRange'), sEl=$('rvRangeSub');
+  if(rEl) rEl.textContent = rvTitleFor(rg, mode);
+  var tb=$('rvTodayBtn');
+  if(tb){ tb.textContent = isCur ? '回到本周' : '回到'+(mode==='week'?'本周':mode==='month'?'本月':'今年'); tb.style.display=isCur?'none':''; }
+  var nb=$('rvNextBtn'); if(nb) nb.style.display=isCur?'none':'';
+  var rt=rangeTasks(rg), rd=rt.filter(function(t){return t.status==='done';});
+  if(sEl) sEl.textContent = fmtCN(rg.s)+' – '+fmtCN(rg.e)+' · '+rt.length+' 项任务 · 已完成 '+rd.length+
+    (mode==='week'?'':' · '+Math.round((daysBetween(rg.s,rg.e)+1))+' 天');
+  var hours=rangeUsageByCat(rg);
+  var nDays=daysBetween(rg.s,rg.e)+1;
   var hoursHtml=Object.keys(TT).map(function(k){
-    var target=S.budgets[k]*7;
+    var target=Math.round(S.budgets[k]*nDays*10)/10;
     return '<div class="stat"><div class="k">'+TT[k].label+'时间 · 已用/预计</div><div class="v">'+fmtHM(hours[k])+'<small>/ '+target+'h</small></div></div>';
   }).join('');
   $('rvQs').innerHTML =
     '<div class="rv-grid">'+hoursHtml+'</div>'+
-    reviewWeekChart();
+    reviewChart(rg, mode);
 }
-/* 每周复盘：周一~周日 每天专注时间分布（工作/校招/个人 三色堆叠柱状图） */
-function reviewWeekChart(){
-  var ws=weekStart();
-  var wd=['一','二','三','四','五','六','日'];
-  var days=[], max=0;
-  for(var i=0;i<7;i++){
-    var ds=addDays(ws,i);
+function rangeTasks(rg){
+  return S.tasks.filter(function(t){ return t.deadline && t.deadline>=rg.s && t.deadline<=rg.e; });
+}
+/* 复盘柱状图：周=7天 / 月=每天一根 / 年=12个月聚合 */
+function reviewChart(rg, mode){
+  var bars='';
+  function dayBy(ds){
     var by={work:0,campus:0,personal:0};
     if(S.tracks) S.tracks.forEach(function(tr){ if(tr.date===ds && by[tr.cat]!==undefined) by[tr.cat]+=tr.minutes; });
-    var tot=by.work+by.campus+by.personal;
-    if(tot>max) max=tot;
-    days.push({ds:ds, by:by, tot:tot});
+    if(S.manualUsage && S.manualUsage[ds]) Object.keys(by).forEach(function(k){
+      if(typeof S.manualUsage[ds][k]==='number') by[k]+=S.manualUsage[ds][k]*60;
+    });
+    return by;
   }
-  var bars=days.map(function(d,i){
+  function rangeBy(s,e){
+    var by={work:0,campus:0,personal:0};
+    if(S.tracks) S.tracks.forEach(function(tr){ if(tr.date>=s && tr.date<=e && by[tr.cat]!==undefined) by[tr.cat]+=tr.minutes; });
+    if(S.manualUsage) Object.keys(S.manualUsage).forEach(function(ds){
+      if(ds<s||ds>e) return;
+      Object.keys(by).forEach(function(k){ if(typeof S.manualUsage[ds][k]==='number') by[k]+=S.manualUsage[ds][k]*60; });
+    });
+    return by;
+  }
+  var cols=[];
+  if(mode==='week'){
+    var wd=['一','二','三','四','五','六','日'];
+    for(var i=0;i<7;i++){ var ds=addDays(rg.s,i); cols.push({ds:ds, by:dayBy(ds), lbl:(ds===today()?'今':wd[i]), isToday:ds===today()}); }
+  }else if(mode==='month'){
+    var n=daysBetween(rg.s,rg.e)+1;
+    for(var j=0;j<n;j++){ var d2=addDays(rg.s,j); cols.push({ds:d2, by:dayBy(d2), lbl:String(j+1), isToday:d2===today()}); }
+  }else{
+    var y=parseD(rg.s).getFullYear();
+    for(var m=1;m<=12;m++){
+      var ms=y+'-'+pad2(m)+'-01', me=dstr(new Date(y, m, 0));
+      cols.push({ds:ms, by:rangeBy(ms,me), lbl:m+'月', isToday:(today()>=ms&&today()<=me), agg:true});
+    }
+  }
+  var max=0;
+  cols.forEach(function(c){ var t=c.by.work+c.by.campus+c.by.personal; c.tot=t; if(t>max) max=t; });
+  bars=cols.map(function(c){
     var segs=Object.keys(TT).map(function(k){
-      if(d.by[k]<=0) return '';
-      var h=Math.round(d.by[k]/(max||1)*100);
-      return '<div class="rv-seg" style="height:'+h+'%;background:'+TT[k].color+'" title="'+TT[k].label+' '+fmtHM(d.by[k]/60)+'"></div>';
+      if(c.by[k]<=0) return '';
+      var h=Math.round(c.by[k]/(max||1)*100);
+      return '<div class="rv-seg" style="height:'+h+'%;background:'+TT[k].color+'" title="'+TT[k].label+' '+fmtHM(c.by[k]/60)+'"></div>';
     }).join('');
-    var isToday=d.ds===today();
     return '<div class="rv-barcol">'+
-      '<div class="rv-tot">'+(d.tot>0?fmtHM(d.tot/60):'')+'</div>'+
-      '<div class="rv-barstack'+(d.tot>0?'':' empty')+(isToday?' today':'')+'">'+segs+'</div>'+
-      '<div class="rv-daylbl'+(isToday?' today':'')+'">'+(isToday?'今':wd[i])+'</div>'+
+      '<div class="rv-tot">'+(c.tot>0?fmtHM(c.tot/60):'')+'</div>'+
+      '<div class="rv-barstack'+(c.tot>0?'':' empty')+(c.isToday?' today':'')+'">'+segs+'</div>'+
+      '<div class="rv-daylbl'+(c.isToday?' today':'')+'">'+c.lbl+'</div>'+
     '</div>';
   }).join('');
   var legend=Object.keys(TT).map(function(k){ return '<span class="rv-lg"><i style="background:'+TT[k].color+'"></i>'+TT[k].label+'</span>'; }).join('');
-  return '<div class="rv-chart">'+
-    '<div class="rv-chart-head"><b>每天时间分布</b><span class="rv-lgd">'+legend+'</span></div>'+
-    '<div class="rv-bars">'+bars+'</div>'+
-    '<div class="rv-chart-foot">按每天的专注记录统计（工作 / 校招 / 个人 三类）</div>'+
+  return '<div class="rv-chart'+
+    (mode==='month'?' dense':'')+'">'+
+    '<div class="rv-chart-head"><b>'+(mode==='week'?'每天时间分布':mode==='month'?'每天时间分布':'每月时间分布')+'</b><span class="rv-lgd">'+legend+'</span></div>'+
+    '<div class="rv-bars'+(mode==='month'?' dense':'')+'">'+bars+'</div>'+
+    '<div class="rv-chart-foot">按专注记录统计（工作 / 校招 / 个人 三类），历史数据永久保留，可随时回看</div>'+
   '</div>';
 }
 /* reviewTimeAllocation / nextWeekRec 已随复盘改版移除 */
@@ -2231,7 +2310,6 @@ function memoInsertImages(files){
 
 function refreshAll(){
   renderGlance();
-  renderThisWeek();
   renderToday();
   renderBoard();
   renderEnergy();
@@ -2883,6 +2961,13 @@ document.addEventListener('click', function(e){
       V.goalHist=Math.max(0, Math.min(S.goalHistory.length-1, V.goalHist+ghd));
       refreshAll(); break;
     }
+    case 'rvNav': { rvShift(parseInt(el.getAttribute('data-d'),10)); break; }
+    case 'rvToday': { V.rvAnchor=null; refreshAll(); break; }
+    case 'rvMode': {
+      V.rvMode=el.getAttribute('data-m')||'week';
+      V.rvAnchor=null;
+      refreshAll(); break;
+    }
     case 'memoNew': { memoNew(); break; }
     case 'memoDel': { memoDel(); break; }
     case 'memoOpen': {
@@ -3251,6 +3336,16 @@ if(document.readyState==='complete' || document.readyState==='interactive'){
 .rv-daylbl{font-size:10.5px;color:var(--ink-3);font-weight:600}
 .rv-daylbl.today{color:var(--green);font-weight:700}
 .rv-chart-foot{margin-top:10px;font-size:10.5px;color:var(--ink-3)}
+/* 复盘周期导航（‹ 回到本周 › | 周 月 年） */
+.rv-nav{display:flex;align-items:center;gap:6px}
+.rv-modes{display:flex;background:var(--bg-2);border-radius:8px;padding:2px;margin-left:4px}
+.rv-mode{border:0;background:transparent;font:inherit;font-size:11.5px;font-weight:600;color:var(--ink-3);padding:3px 10px;border-radius:6px;cursor:pointer}
+.rv-mode.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* 月视图 31 根细柱 */
+.rv-bars.dense{gap:2px}
+.rv-bars.dense .rv-barstack{max-width:100%;border-radius:5px;min-height:110px}
+.rv-bars.dense .rv-tot{font-size:8px;height:11px;line-height:11px}
+.rv-bars.dense .rv-daylbl{font-size:8.5px;font-weight:500}
 </style>
 <div class="modal-mask" id="dayMask">
   <div class="modal">
